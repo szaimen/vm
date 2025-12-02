@@ -49,12 +49,11 @@ fi
 
 # Find mounts
 print_text_in_color "$ICyan" "Getting all valid mounts. This can take a while..."
-DIRECTORIES=$(find /mnt/ -mindepth 1 -maxdepth 2 -type d | grep -v "/mnt/ncdata")
+DIRECTORIES=$(find /mnt/ -mindepth 1 -maxdepth 2 -type d)
 mapfile -t DIRECTORIES <<< "$DIRECTORIES"
 for directory in "${DIRECTORIES[@]}"
 do
-    if mountpoint -q "$directory" && [ "$(stat -c '%a' "$directory")" = "770" ] \
-&& [ "$(stat -c '%U' "$directory")" = "$WEB_USER" ] && [ "$(stat -c '%G' "$directory")" = "$WEB_GROUP" ]
+    if mountpoint -q "$directory"
     then
         MOUNTS+=("$directory/")
     fi
@@ -88,8 +87,7 @@ else
 fi
 
 # Activate encrypted transfer if AES-NI is enabled (passwords are encrypted by default)
-install_if_not cpuid
-if cpuid | grep " AES" | grep -q true
+if grep " aes " /proc/cpuinfo
 then
     if ! grep -q "^smb encrypt =" "$SMB_CONF"
     then
@@ -117,13 +115,14 @@ fi
 # Samba stop function
 samba_stop() {
     print_text_in_color "$ICyan" "Stopping the SMB-server..."
-    systemctl stop smbd
+    kill -f smbd
 }
 
 # Samba start function
 samba_start() {
-    print_text_in_color "$ICyan" "Starting the SMB-server..."
-    systemctl start smbd
+    print_text_in_color "$ICyan" "Restarting the SMB-server..."
+    # Supervisor will automatically restart the service
+    kill -f smbd
 }
 
 # Get SMB users
@@ -780,12 +779,9 @@ EOF
 
 You should be able to connect with the credentials of the chosen SMB-user(s) to the SMB-server now
 to see all for the specific SMB-user available SMB-shares:
-- On Linux in a file manager using this address: 'smb://nextcloud'
-- On Windows in the Windows Explorer using this address: '\\\\ nextcloud' (without space)
-- On macOS in the Finder (press '[CMD] + [K]') using this address: 'smb://nextcloud'
-
-If connecting using 'nextcloud' as server name doesn't work, \
-you can also connect using the IP-address: '$ADDRESS' instead of nextcloud." "$SUBTITLE"
+- On Linux in a file manager using this address: 'smb://ip.address.of.this.server'
+- On Windows in the Windows Explorer using this address: '\\\\ ip.address.of.this.server' (without space)
+- On macOS in the Finder (press '[CMD] + [K]') using this address: 'smb://ip.address.of.this.server'" "$SUBTITLE"
 
     # Test if NC exists
     if ! [ -f $NCPATH/occ ]
@@ -1349,7 +1345,8 @@ It gets executed every day and cleans old files in the recycle bin folders that 
         msg_box "No SMB-share created. Please create a SMB-share first." "$SUBTITLE"
         return
     else
-        systemctl restart smbd
+        # Supervisor will automatically restart the service
+        kill -f smbd
     fi
 
     # Execute
@@ -1457,6 +1454,10 @@ $CHECKLIST_GUIDE" "$WT_HEIGHT" "$WT_WIDTH" 4)
     msg_box "All selected recycle folders were emptied!
 Please note: If you are using BTRFS as file system, it can take up to 54h until the space is released due to automatic snapshots." "$SUBTITLE"
 
+    if ! [ -f $NCPATH/occ ]; then
+        return
+    fi
+
     # Allow to clean up Nextclouds trashbin, too
     if yesno_box_no "Do you want to clean up Nextclouds trashbin, too?
 This will run the command 'occ trashbin:cleanup --all-users' for you if you select 'Yes'!" "$SUBTITLE"
@@ -1482,7 +1483,6 @@ do
 $MENU_GUIDE" "$WT_HEIGHT" "$WT_WIDTH" 4 \
 "Open the SMB-user Menu" "(manage SMB-users)" \
 "Open the SMB-share Menu" "(manage SMB-shares)" \
-"Automatically empty recycle bins  " "(Schedule cleanup of recycle folders)" \
 "Empty recycle bins" "(Clean up recycle folders)" \
 "Exit" "(exit this script)" 3>&1 1>&2 2>&3)
 
